@@ -126,15 +126,7 @@ def apply_point_mutation(dna: str, index_1based: int, new_base: str) -> str:
 
 
 def classify_mutation(wt_protein: str, mut_protein: str) -> dict:
-    """
-    WT vs mutant protein karşılaştırması:
-      - Aynı ise → silent
-      - Mutant daha kısa ise → truncation (nonsense veya frameshift+nonsense)
-            → AA değişimi: Xn* şeklinde raporlanır
-      - Mutant daha uzun ise → insertion/frameshift benzeri
-      - Uzunluk aynı ve fark varsa → missense
-    """
-    # Tamamen aynı → silent
+    # Aynı → silent
     if wt_protein == mut_protein:
         return {
             "type": "silent",
@@ -145,28 +137,14 @@ def classify_mutation(wt_protein: str, mut_protein: str) -> dict:
 
     len_wt = len(wt_protein)
     len_mut = len(mut_protein)
-    min_len = min(len_wt, len_mut)
 
-    # İlk farklı AA pozisyonunu bul
-    first_diff = None
-    for i in range(min_len):
-        if wt_protein[i] != mut_protein[i]:
-            first_diff = i  # 0-based
-            break
-
-    # --- 1) Mutant daha kısa → erken STOP (truncation) ---
+    # 1) Mutant DAHA KISA ise → erken stop (nonsense)
     if len_mut < len_wt:
-        # Eğer tüm prefix aynıysa: WT’nin ilk len_mut AA’sı mutantla aynı
-        # demek ki STOP, bir sonraki pozisyonda oluşmuş
-        if first_diff is None:
-            pos = len_mut + 1           # 1-based
-        else:
-            # Hem AA değişimi hem erken STOP olabilir,
-            # yine de etkiyi STOP üzerinden raporlayalım
-            pos = first_diff + 1
-
-        aa_from = wt_protein[pos - 1]   # WT’de bu AA olacaktı
-        aa_to = "*"                     # Mutantta burada STOP var (nonsense)
+        # Mutant’ın içerdiği AA sayısı = len_mut
+        # Bir sonraki pozisyon, WT’de var ama mutantta yok → STOP noktası
+        pos = len_mut + 1                 # 1-based AA pozisyonu
+        aa_from = wt_protein[pos - 1]     # WT’de hangi AA olacaktı?
+        aa_to = "*"                       # Mutantta burada STOP var (nonsense)
         return {
             "type": "nonsense",
             "position": pos,
@@ -174,18 +152,11 @@ def classify_mutation(wt_protein: str, mut_protein: str) -> dict:
             "aa_to": aa_to,
         }
 
-    # --- 2) Mutant daha uzun → insertion / frameshift benzeri ---
+    # 2) Mutant DAHA UZUN ise → frameshift / insersiyon benzeri
     if len_mut > len_wt:
-        if first_diff is None:
-            # WT tamamen prefix, sonra uzama var
-            pos = len_wt + 1
-            aa_from = None
-            aa_to = mut_protein[pos - 1]
-        else:
-            pos = first_diff + 1
-            aa_from = wt_protein[pos - 1]
-            aa_to = mut_protein[pos - 1]
-
+        pos = len_wt + 1
+        aa_from = None
+        aa_to = mut_protein[pos - 1]
         return {
             "type": "frameshift_or_insertion",
             "position": pos,
@@ -193,25 +164,22 @@ def classify_mutation(wt_protein: str, mut_protein: str) -> dict:
             "aa_to": aa_to,
         }
 
-    # --- 3) Uzunluklar aynı → klasik missense ---
-    if first_diff is not None:
-        pos = first_diff + 1
-        aa_from = wt_protein[pos - 1]
-        aa_to = mut_protein[pos - 1]
-        return {
-            "type": "missense",
-            "position": pos,
-            "aa_from": aa_from,
-            "aa_to": aa_to,
-        }
+    # 3) Uzunluklar eşit → ilk farklı pozisyon = missense
+    pos = None
+    aa_from = aa_to = None
+    for i, (a, b) in enumerate(zip(wt_protein, mut_protein), start=1):
+        if a != b:
+            pos = i
+            aa_from, aa_to = a, b
+            break
 
-    # Teorik olarak buraya düşmez ama güvence olsun
     return {
-        "type": "unknown",
-        "position": None,
-        "aa_from": None,
-        "aa_to": None,
+        "type": "missense",
+        "position": pos,
+        "aa_from": aa_from,
+        "aa_to": aa_to,
     }
+
 
 
 def predict_impact(mut_info: dict) -> str:
